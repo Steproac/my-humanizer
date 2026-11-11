@@ -1,10 +1,14 @@
 {
   "name": "humanizer",
+  "type": "module",
   "private": true,
   "description": "Rewrite AI-sounding text so it reads like the writer without changing what it says.",
   "license": "MIT",
   "repository": "github:blader/humanizer",
   "keywords": ["pi-package"],
+  "scripts": {
+    "start": "node server.js"
+  },
   "pi": {
     "skills": ["./"]
   }

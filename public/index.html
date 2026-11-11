@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Humanizer — Local Testing & Preview</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Header -->
+  <header class="navbar">
+    <div class="nav-container">
+      <div class="logo-group">
+        <div class="logo-icon">✍️</div>
+        <div>
+          <h1 class="logo-title">AI Humanizer</h1>
+          <p class="logo-sub">Rule-based AI pattern removal • 26 patterns</p>
+        </div>
+      </div>
+
+      <div class="nav-actions">
+        <!-- Sample Selector -->
+        <div class="dropdown-wrapper">
+          <button class="btn btn-secondary dropdown-btn" id="samplesBtn">
+            <span>📋 Load Sample</span>
+            <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="dropdown-menu" id="samplesMenu">
+            <button class="dropdown-item" data-sample="product">Product Launch (Dashes, Staged Opener, Not-X)</button>
+            <button class="dropdown-item" data-sample="technical">Technical Architecture (AI Words, Triads)</button>
+            <button class="dropdown-item" data-sample="essay">Leadership & Strategy (Deep Sayings, Closers)</button>
+          </div>
+        </div>
+
+        <!-- API Settings Button -->
+        <button class="btn btn-secondary" id="openSettingsBtn">
+          <span class="status-dot" id="navStatusDot"></span>
+          <span id="navKeyLabel">API Settings</span>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Notice Banner -->
+  <div class="banner-container">
+    <div class="banner">
+      <span class="banner-badge">Railway Ready</span>
+      <span>Test your humanizer locally before deploying. Configure your API key in the settings above or inside <code>.env</code>.</span>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <main class="main-container">
+    <div class="editor-grid">
+      <!-- Input Panel -->
+      <section class="card panel">
+        <div class="panel-header">
+          <div class="panel-title-group">
+            <span class="panel-dot input-dot"></span>
+            <h2>AI-Generated Text</h2>
+          </div>
+          <div class="panel-stats">
+            <span id="inputWordCount">0 words</span>
+            <span class="dot-separator">•</span>
+            <span id="inputCharCount">0 chars</span>
+            <button class="btn-ghost" id="clearInputBtn" title="Clear input">Clear</button>
+          </div>
+        </div>
+
+        <div class="textarea-wrapper">
+          <textarea
+            id="inputText"
+            placeholder="Paste AI-generated text here, or click 'Load Sample' above...&#10;&#10;Humanizer will strip out tells like 'not X but Y', 'let that sink in', forced triads, 'delve', and false profundity while keeping all original facts and data."
+          ></textarea>
+        </div>
+
+        <!-- Optional Voice Matching Sample Accordion -->
+        <details class="accordion" id="voiceAccordion">
+          <summary class="accordion-header">
+            <span>🎭 Match Specific Author Voice (Optional)</span>
+            <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+          </summary>
+          <div class="accordion-content">
+            <p class="field-hint">Paste 1-2 paragraphs of your own writing. Humanizer will match your sentence rhythm, cadence, and vocabulary.</p>
+            <textarea id="voiceSample" rows="3" placeholder="Example of your own writing style..."></textarea>
+          </div>
+        </details>
+
+        <!-- Action Bar -->
+        <div class="action-bar">
+          <button class="btn btn-primary" id="humanizeBtn">
+            <span class="btn-spinner hidden" id="spinner"></span>
+            <span id="btnText">✨ Humanize Text</span>
+          </button>
+          <button class="btn btn-secondary" id="demoBtn" title="Run simulated test without needing an API key">
+            ⚡ Quick Demo Mode
+          </button>
+        </div>
+      </section>
+
+      <!-- Output Panel -->
+      <section class="card panel">
+        <div class="panel-header">
+          <div class="panel-title-group">
+            <span class="panel-dot output-dot"></span>
+            <h2>Humanized Output</h2>
+          </div>
+          <div class="output-actions">
+            <div class="tabs">
+              <button class="tab-btn active" data-tab="final">Rewrite</button>
+              <button class="tab-btn" data-tab="tells">Detected Tells</button>
+              <button class="tab-btn" data-tab="raw">Full Output</button>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="copyBtn" title="Copy clean output">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+              <span id="copyLabel">Copy</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="output-body">
+          <!-- Final Rewrite Tab -->
+          <div class="tab-pane active" id="tab-final">
+            <div class="output-content" id="outputFinal">
+              <div class="placeholder-state">
+                <div class="placeholder-icon">📄</div>
+                <p>Your rewritten human prose will appear here.</p>
+                <p class="placeholder-sub">Click <strong>Humanize Text</strong> or <strong>Quick Demo Mode</strong> to start.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tells Tab -->
+          <div class="tab-pane" id="tab-tells">
+            <div class="output-content" id="outputTells">
+              <div class="placeholder-state">
+                <div class="placeholder-icon">🔍</div>
+                <p>Analysis of removed AI tells and patterns (§1–§26) will show here.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Raw Tab -->
+          <div class="tab-pane" id="tab-raw">
+            <pre class="raw-output" id="outputRaw">No output yet.</pre>
+          </div>
+        </div>
+
+        <!-- Output Footer Stats -->
+        <div class="panel-footer" id="outputFooter" style="display: none;">
+          <div class="stats-comparison">
+            <span id="outWordCount">0 words</span>
+            <span class="stat-badge" id="wordDiffBadge">0% change</span>
+            <span class="dot-separator">•</span>
+            <span id="modelUsedBadge">gpt-4o</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Settings Modal -->
+  <div class="modal-backdrop hidden" id="settingsModal">
+    <div class="modal card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <h3>API Key & Provider Settings</h3>
+          <p class="field-hint">Choose where your API key is stored and which model to use.</p>
+        </div>
+        <button class="modal-close-btn" id="closeSettingsBtn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Storage info box -->
+        <div class="info-callout">
+          <strong>Key Locations:</strong>
+          <ul>
+            <li><strong>Local testing:</strong> Enter your key below (saved locally in your browser), or add it to <code>.env</code> in this project.</li>
+            <li><strong>Railway deployment:</strong> Add your key under <strong>Variables</strong> in your Railway service dashboard.</li>
+          </ul>
+        </div>
+
+        <!-- Provider Selection -->
+        <div class="form-group">
+          <label for="providerSelect">AI Provider</label>
+          <select id="providerSelect" class="input-select">
+            <option value="openai">OpenAI (GPT-4o, GPT-4o-mini, o3-mini)</option>
+            <option value="anthropic">Anthropic Claude (Sonnet 5.5, Opus 5.5, Haiku 5.5)</option>
+            <option value="gemini">Google Gemini (Gemini 3.8 Flash, 2.5 Pro)</option>
+            <option value="groq">Groq (Llama 3.3 70B — Fast & Generous Free Tier)</option>
+            <option value="openrouter">OpenRouter (Multi-model gateway)</option>
+          </select>
+        </div>
+
+        <!-- Model Selection -->
+        <div class="form-group">
+          <label for="modelSelect">Model</label>
+          <select id="modelSelect" class="input-select"></select>
+        </div>
+
+        <!-- API Key Input -->
+        <div class="form-group">
+          <div class="label-row">
+            <label for="apiKeyInput" id="apiKeyLabel">OpenAI API Key</label>
+            <span class="env-status-badge" id="envStatusBadge">Checking .env...</span>
+          </div>
+          <div class="password-wrapper">
+            <input type="password" id="apiKeyInput" class="input-text" placeholder="sk-..." autocomplete="off">
+            <button class="toggle-password-btn" id="toggleKeyVisibility" type="button" title="Show/Hide">👁️</button>
+          </div>
+          <p class="field-hint" id="apiKeyHint">Saved securely in browser localStorage for this domain. It is never logged.</p>
+        </div>
+
+        <!-- Direct .env file link reference -->
+        <div class="file-path-box">
+          <span class="file-label">Local .env file path:</span>
+          <code>/Users/stephenroach/Documents/AI Humanizer/.env</code>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelSettingsBtn">Close</button>
+        <button class="btn btn-primary" id="saveSettingsBtn">Save & Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification Toast -->
+  <div class="toast hidden" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+
