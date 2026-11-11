@@ -131,20 +131,22 @@ function populateModels() {
 function updateEnvBadge() {
   const provider = providerSelect.value;
   const hasEnv = serverConfig?.configuredKeys?.[provider];
-  const hasLocal = Boolean(getStoredKey(provider) || apiKeyInput.value.trim());
+  const info = serverConfig?.keyDetails?.[provider];
+  const hasLocal = Boolean(getStoredKey(provider));
 
-  if (hasEnv) {
-    envStatusBadge.textContent = '✓ Configured in .env';
+  if (hasEnv && info) {
+    envStatusBadge.textContent = `✓ Server: ${info.envVar} (${info.prefix} • ${info.length} chars)`;
     envStatusBadge.className = 'env-status-badge connected';
     navStatusDot.className = 'status-dot active';
-    navKeyLabel.textContent = `${providerSelect.options[providerSelect.selectedIndex].text.split(' ')[0]} Ready (.env)`;
+    navKeyLabel.textContent = `${providerSelect.options[providerSelect.selectedIndex].text.split(' ')[0]} Ready (${info.envVar})`;
   } else if (hasLocal) {
-    envStatusBadge.textContent = '✓ Saved in Browser';
+    const lk = getStoredKey(provider);
+    envStatusBadge.textContent = `✓ Browser Key (${lk.slice(0, 8)}... • ${lk.length} chars)`;
     envStatusBadge.className = 'env-status-badge connected';
     navStatusDot.className = 'status-dot active';
-    navKeyLabel.textContent = `${providerSelect.options[providerSelect.selectedIndex].text.split(' ')[0]} Ready (Saved)`;
+    navKeyLabel.textContent = `${providerSelect.options[providerSelect.selectedIndex].text.split(' ')[0]} Ready (Browser Key)`;
   } else {
-    envStatusBadge.textContent = 'Not set in .env';
+    envStatusBadge.textContent = 'Not set in Railway/server';
     envStatusBadge.className = 'env-status-badge';
     navStatusDot.className = 'status-dot';
     navKeyLabel.textContent = 'API Key Needed';
@@ -237,6 +239,16 @@ function setupEventListeners() {
     apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
   });
 
+  const clearStoredKeyBtn = document.getElementById('clearStoredKeyBtn');
+  if (clearStoredKeyBtn) {
+    clearStoredKeyBtn.addEventListener('click', () => {
+      setStoredKey(providerSelect.value, '');
+      apiKeyInput.value = '';
+      updateEnvBadge();
+      showToast('Cleared browser key. Railway / .env variable will be used.');
+    });
+  }
+
   // Tab switching
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -291,7 +303,8 @@ async function runHumanizer(isMock = false) {
 
   const provider = providerSelect.value;
   const model = modelSelect.value;
-  const apiKey = getStoredKey(provider);
+  const storedKey = getStoredKey(provider);
+  const apiKey = (storedKey && storedKey.trim()) ? storedKey.trim() : undefined;
   const voice = voiceSample.value.trim();
 
   // If not mock, check for API key

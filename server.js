@@ -49,12 +49,14 @@ const PROVIDERS = {
   openai: {
     name: 'OpenAI',
     envKey: 'OPENAI_API_KEY',
+    envKeys: ['OPENAI_API_KEY', 'OPENAI_KEY'],
     defaultModel: 'gpt-4o',
     models: ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'gpt-4-turbo']
   },
   anthropic: {
     name: 'Anthropic Claude',
     envKey: 'ANTHROPIC_API_KEY',
+    envKeys: ['ANTHROPIC_API_KEY', 'CLAUDE_API_KEY', 'ANTHROPIC_KEY'],
     defaultModel: 'claude-sonnet-5-5',
     models: [
       'claude-sonnet-5-5',
@@ -69,22 +71,52 @@ const PROVIDERS = {
   gemini: {
     name: 'Google Gemini',
     envKey: 'GEMINI_API_KEY',
+    envKeys: ['GEMINI_API_KEY', 'GOOGLE_GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_KEY'],
     defaultModel: 'gemini-3.8-flash',
     models: ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.5-pro']
   },
   groq: {
     name: 'Groq',
     envKey: 'GROQ_API_KEY',
+    envKeys: ['GROQ_API_KEY', 'GROQ_KEY'],
     defaultModel: 'llama-3.3-70b-versatile',
     models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768']
   },
   openrouter: {
     name: 'OpenRouter',
     envKey: 'OPENROUTER_API_KEY',
+    envKeys: ['OPENROUTER_API_KEY', 'OPENROUTER_KEY'],
     defaultModel: 'anthropic/claude-3.5-sonnet',
     models: ['anthropic/claude-3.5-sonnet', 'openai/gpt-4o', 'meta-llama/llama-3.3-70b-instruct']
   }
 };
+
+// Sanitize keys to remove accidental quotes, whitespace, or KEY= prefixes
+function sanitizeApiKey(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let key = raw.trim();
+  // Strip surrounding quotes
+  if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+    key = key.slice(1, -1).trim();
+  }
+  // Strip accidental VARIABLE_NAME= prefix (e.g. pasted into Railway Value field)
+  if (key.includes('=')) {
+    const parts = key.split('=');
+    key = parts[parts.length - 1].trim();
+  }
+  return key;
+}
+
+function getServerKey(providerConfig) {
+  const keysToCheck = providerConfig.envKeys || [providerConfig.envKey];
+  for (const k of keysToCheck) {
+    if (process.env[k]) {
+      const sanitized = sanitizeApiKey(process.env[k]);
+      if (sanitized) return { key: sanitized, envVarName: k };
+    }
+  }
+  return { key: '', envVarName: '' };
+}
 
 // LLM call handlers
 async function callOpenAICompatible(baseUrl, apiKey, model, systemPrompt, userPrompt, extraHeaders = {}) {
@@ -250,8 +282,17 @@ const server = http.createServer(async (req, res) => {
   if (pathname === '/api/config' && req.method === 'GET') {
     loadEnv();
     const configuredKeys = {};
+    const keyDetails = {};
     for (const [key, conf] of Object.entries(PROVIDERS)) {
-      configuredKeys[key] = Boolean(process.env[conf.envKey]);
+      const { key: sKey, envVarName } = getServerKey(conf);
+      configuredKeys[key] = Boolean(sKey);
+      if (sKey) {
+        keyDetails[key] = {
+          envVar: envVarName,
+          prefix: sKey.slice(0, 9) + '...',
+          length: sKey.length
+        };
+      }
     }
     let defaultProvider = process.env.DEFAULT_PROVIDER || 'gemini';
     if (!configuredKeys[defaultProvider]) {
@@ -262,6 +303,7 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify({
       providers: PROVIDERS,
       configuredKeys,
+      keyDetails,
       defaultProvider
     }));
     return;
@@ -297,14 +339,20 @@ const server = http.createServer(async (req, res) => {
           return;
         }
 
-        const effectiveKey = apiKey || process.env[providerConfig.envKey];
+        const clientKey = sanitizeApiKey(apiKey);
+        const { key: serverKey, envVarName } = getServerKey(providerConfig);
+        const effectiveKey = clientKey || serverKey;
+
         if (!effectiveKey) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({
-            error: `Missing API key for ${providerConfig.name}. Please enter your API key in the UI settings or configure ${providerConfig.envKey} in your .env file.`
+            error: `Missing API key for ${providerConfig.name}. Please enter your API key in the UI settings or configure ${providerConfig.envKey} in Railway Variables / .env file.`
           }));
           return;
         }
+
+        const keySource = clientKey ? 'browser input' : `environment variable (${envVarName})`;
+        console.log(`[API Call] Provider: ${providerConfig.name}, Model: ${model || providerConfig.defaultModel}, Key source: ${keySource}, Key length: ${effectiveKey.length}, Prefix: ${effectiveKey.slice(0, 9)}...`);
 
         const targetModel = model || providerConfig.defaultModel;
 

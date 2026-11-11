@@ -209,10 +209,13 @@
             <span class="env-status-badge" id="envStatusBadge">Checking .env...</span>
           </div>
           <div class="password-wrapper">
-            <input type="password" id="apiKeyInput" class="input-text" placeholder="sk-..." autocomplete="off">
+            <input type="password" id="apiKeyInput" class="input-text" placeholder="Leave blank to use Railway variable..." autocomplete="off">
             <button class="toggle-password-btn" id="toggleKeyVisibility" type="button" title="Show/Hide">👁️</button>
           </div>
-          <p class="field-hint" id="apiKeyHint">Saved securely in browser localStorage for this domain. It is never logged.</p>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+            <p class="field-hint" id="apiKeyHint">Leave blank to use the key saved on Railway.</p>
+            <button type="button" class="btn-ghost" id="clearStoredKeyBtn" style="font-size: 0.75rem; color: #818cf8; text-decoration: underline;">Clear Browser Key</button>
+          </div>
         </div>
 
         <!-- Direct .env file link reference -->
