@@ -4,10 +4,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const SKILL_PATH = path.join(__dirname, 'SKILL.md');
 
-// 1. Simple .env parser (zero external dependencies)
+const MAX_BODY_BYTES = 256 * 1024;
+const MAX_INPUT_CHARS = 30000;
+const UPSTREAM_TIMEOUT_MS = 180_000;
+
+// Load .env without external dependencies. Variables set in the real
+// environment (Railway, the shell) take precedence over .env.
+const REAL_ENV_KEYS = new Set(Object.keys(process.env));
 function loadEnv() {
   const envPath = path.join(__dirname, '.env');
   if (!fs.existsSync(envPath)) return;
@@ -22,237 +29,527 @@ function loadEnv() {
     if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
       val = val.slice(1, -1);
     }
-    if (key) {
-      process.env[key] = val;
-    }
+    if (key && !REAL_ENV_KEYS.has(key)) process.env[key] = val;
   }
 }
 loadEnv();
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
-const SKILL_PATH = path.join(__dirname, 'SKILL.md');
 
-// Cache SKILL.md content
-let skillPrompt = '';
-function getSkillPrompt() {
+function loadSkill() {
   try {
     return fs.readFileSync(SKILL_PATH, 'utf8');
   } catch (err) {
-    console.error('Error reading SKILL.md:', err);
+    console.error('Could not read SKILL.md:', err);
     return 'Make AI-written text sound like a human wrote it without changing what it says.';
   }
 }
-skillPrompt = getSkillPrompt();
+const skillPrompt = loadSkill();
 
-// Provider defaults and endpoint mappings
+// Read the pattern list from the SKILL.md headings so the count never goes stale.
+const PATTERNS = [...skillPrompt.matchAll(/^### (\d+)\. (.+)$/gm)].map(m => ({
+  n: Number(m[1]),
+  name: m[2].trim()
+}));
+
+// Every model the server will call. Requests for any other model use the
+// provider's default, so a stale browser or a direct API call can never send
+// a retired model ID to a provider.
 const PROVIDERS = {
-  openai: {
-    name: 'OpenAI',
-    envKey: 'OPENAI_API_KEY',
-    envKeys: ['OPENAI_API_KEY', 'OPENAI_KEY'],
-    defaultModel: 'gpt-4o',
-    models: ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'gpt-4-turbo']
-  },
   anthropic: {
-    name: 'Anthropic Claude',
-    envKey: 'ANTHROPIC_API_KEY',
+    name: 'Anthropic',
     envKeys: ['ANTHROPIC_API_KEY', 'CLAUDE_API_KEY', 'ANTHROPIC_KEY'],
+    keyPrefix: 'sk-ant-',
     defaultModel: 'claude-sonnet-5-5',
     models: [
-      'claude-sonnet-5-5',
-      'claude-opus-5-5',
-      'claude-haiku-5-5',
-      'claude-sonnet-5',
-      'claude-opus-5',
-      'claude-sonnet-4-6',
-      'claude-opus-4-6'
+      { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', hint: 'Recommended. Strong rewrites at a moderate cost.' },
+      { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', hint: 'Most careful rewrites. About twice the cost of Sonnet.' },
+      { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', hint: 'Fastest and cheapest. Best for short, simple text.' }
+    ]
+  },
+  openai: {
+    name: 'OpenAI',
+    envKeys: ['OPENAI_API_KEY', 'OPENAI_KEY'],
+    keyPrefix: 'sk-',
+    defaultModel: 'gpt-4o',
+    models: [
+      { id: 'gpt-4o', label: 'GPT-4o' },
+      { id: 'gpt-4o-mini', label: 'GPT-4o mini' },
+      { id: 'o3-mini', label: 'o3-mini', noTemperature: true },
+      { id: 'gpt-4-turbo', label: 'GPT-4 Turbo' }
     ]
   },
   gemini: {
     name: 'Google Gemini',
-    envKey: 'GEMINI_API_KEY',
     envKeys: ['GEMINI_API_KEY', 'GOOGLE_GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GEMINI_KEY'],
+    keyPrefix: '',
     defaultModel: 'gemini-3.8-flash',
-    models: ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.5-pro']
+    models: [
+      { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
+      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' }
+    ]
   },
   groq: {
     name: 'Groq',
-    envKey: 'GROQ_API_KEY',
     envKeys: ['GROQ_API_KEY', 'GROQ_KEY'],
+    keyPrefix: 'gsk_',
     defaultModel: 'llama-3.3-70b-versatile',
-    models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768']
+    models: [
+      { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B' },
+      { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant' },
+      { id: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B' }
+    ]
   },
   openrouter: {
     name: 'OpenRouter',
-    envKey: 'OPENROUTER_API_KEY',
     envKeys: ['OPENROUTER_API_KEY', 'OPENROUTER_KEY'],
-    defaultModel: 'anthropic/claude-3.5-sonnet',
-    models: ['anthropic/claude-3.5-sonnet', 'openai/gpt-4o', 'meta-llama/llama-3.3-70b-instruct']
+    keyPrefix: 'sk-or-',
+    defaultModel: 'anthropic/claude-sonnet-5.5',
+    models: [
+      { id: 'anthropic/claude-sonnet-5.5', label: 'Claude Sonnet 5.5', noTemperature: true },
+      { id: 'anthropic/claude-opus-5.5', label: 'Claude Opus 5.5', noTemperature: true },
+      { id: 'openai/gpt-4o', label: 'GPT-4o' },
+      { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B' }
+    ]
   }
 };
 
-// Sanitize keys to remove accidental quotes, whitespace, or KEY= prefixes
+// Claude models that accept server-side refusal fallbacks (fallbacks: "default").
+const ANTHROPIC_FALLBACK_MODELS = new Set(['claude-sonnet-5-5', 'claude-opus-5-5']);
+
+// Remove quotes, whitespace, or a pasted VARIABLE_NAME= prefix from a key.
 function sanitizeApiKey(raw) {
   if (!raw || typeof raw !== 'string') return '';
   let key = raw.trim();
-  // Strip surrounding quotes
   if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
     key = key.slice(1, -1).trim();
   }
-  // Strip accidental VARIABLE_NAME= prefix (e.g. pasted into Railway Value field)
-  if (key.includes('=')) {
-    const parts = key.split('=');
-    key = parts[parts.length - 1].trim();
-  }
+  const prefixed = key.match(/^[A-Z][A-Z0-9_]*=(.+)$/);
+  if (prefixed) key = prefixed[1].trim();
   return key;
 }
 
 function getServerKey(providerConfig) {
-  const keysToCheck = providerConfig.envKeys || [providerConfig.envKey];
-  for (const k of keysToCheck) {
-    if (process.env[k]) {
-      const sanitized = sanitizeApiKey(process.env[k]);
-      if (sanitized) return { key: sanitized, envVarName: k };
-    }
+  for (const name of providerConfig.envKeys) {
+    const key = sanitizeApiKey(process.env[name]);
+    if (key) return { key, envVarName: name };
   }
   return { key: '', envVarName: '' };
 }
 
-// LLM call handlers
-async function callOpenAICompatible(baseUrl, apiKey, model, systemPrompt, userPrompt, extraHeaders = {}) {
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      ...extraHeaders
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.3,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ]
-    })
-  });
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`API Error (${res.status}): ${errorText}`);
-  }
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content || '';
+function resolveModel(providerConfig, requested) {
+  const match = providerConfig.models.find(m => m.id === requested);
+  if (match) return { model: match, substituted: false };
+  const fallback = providerConfig.models.find(m => m.id === providerConfig.defaultModel);
+  return { model: fallback, substituted: Boolean(requested) };
 }
 
-async function callAnthropic(apiKey, model, systemPrompt, userPrompt) {
-  const reqBody = {
-    model,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-    max_tokens: 4096
+// Errors the browser can show as-is.
+class AppError extends Error {
+  constructor(status, code, message, detail = '') {
+    super(message);
+    this.status = status;
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
+function upstreamError(providerName, status, bodyText, modelId) {
+  let detail = bodyText;
+  try {
+    const parsed = JSON.parse(bodyText);
+    detail = parsed.error?.message || parsed.message || bodyText;
+  } catch {
+    // Keep the raw text.
+  }
+  detail = String(detail).slice(0, 1000);
+
+  if (status === 401 || status === 403) {
+    return new AppError(502, 'auth', `${providerName} rejected the API key. Check the key in Settings or in your server variables.`, detail);
+  }
+  if (status === 404) {
+    return new AppError(502, 'model', `${providerName} could not find the model "${modelId}". Choose another model in Settings.`, detail);
+  }
+  if (status === 429) {
+    return new AppError(502, 'rate_limit', `${providerName} is limiting requests right now. Wait a moment, then try again.`, detail);
+  }
+  if (status === 529 || status === 503) {
+    return new AppError(502, 'overloaded', `${providerName} is busy right now. Try again in a minute.`, detail);
+  }
+  if (status === 400) {
+    return new AppError(502, 'bad_request', `${providerName} rejected the request.`, detail);
+  }
+  return new AppError(502, 'upstream', `${providerName} returned an error (${status}).`, detail);
+}
+
+async function postJson(url, headers, body, signal) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+    signal
+  });
+}
+
+// LLM call handlers. Each returns { text, servedBy, truncated, usage }.
+async function callOpenAICompatible({ baseUrl, providerName, apiKey, model, systemPrompt, userPrompt, extraHeaders = {}, signal }) {
+  const body = {
+    model: model.id,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ]
   };
-  // Do not send temperature on Claude 5.x / 5.5 models as it is deprecated
-  if (!model.includes('-5')) {
-    reqBody.temperature = 0.3;
-  }
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify(reqBody)
-  });
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`Anthropic Error (${res.status}): ${errorText}`);
-  }
+  if (!model.noTemperature) body.temperature = 0.3;
+
+  const res = await postJson(`${baseUrl}/chat/completions`, { Authorization: `Bearer ${apiKey}`, ...extraHeaders }, body, signal);
+  if (!res.ok) throw upstreamError(providerName, res.status, await res.text(), model.id);
+
   const data = await res.json();
-  const textBlock = data.content?.find(c => c.type === 'text');
-  return textBlock?.text || data.content?.[0]?.text || '';
+  const choice = data.choices?.[0];
+  return {
+    text: choice?.message?.content || '',
+    servedBy: data.model || model.id,
+    truncated: choice?.finish_reason === 'length'
+  };
 }
 
-async function callGemini(apiKey, model, systemPrompt, userPrompt) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: systemPrompt }]
-      },
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: userPrompt }]
-        }
-      ],
-      generationConfig: {
-        temperature: 0.3
-      }
-    })
-  });
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`Gemini Error (${res.status}): ${errorText}`);
+async function callAnthropic({ apiKey, model, systemPrompt, userPrompt, signal }) {
+  const body = {
+    model: model.id,
+    // Claude 5.x models think before they answer, and thinking counts toward
+    // max_tokens. 4096 was too small and could cut rewrites off.
+    max_tokens: 16000,
+    // SKILL.md is the same on every request, so cache it. Repeat requests
+    // within a few minutes then cost less and start sooner.
+    system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+    messages: [{ role: 'user', content: userPrompt }]
+  };
+  const headers = {
+    'x-api-key': apiKey,
+    'anthropic-version': '2023-06-01'
+  };
+  if (ANTHROPIC_FALLBACK_MODELS.has(model.id)) {
+    // If a safety classifier declines the request, Anthropic retries it on
+    // its recommended fallback model inside the same call.
+    headers['anthropic-beta'] = 'server-side-fallback-2026-07-01';
+    body.fallbacks = 'default';
   }
+
+  const res = await postJson('https://api.anthropic.com/v1/messages', headers, body, signal);
+  if (!res.ok) throw upstreamError('Anthropic', res.status, await res.text(), model.id);
+
   const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  if (data.stop_reason === 'refusal') {
+    const category = data.stop_details?.category;
+    throw new AppError(422, 'refusal',
+      `Claude declined to rewrite this text${category ? ` (safety category: ${category})` : ''}. Try different text or another model.`,
+      data.stop_details?.explanation || '');
+  }
+
+  // Read text blocks by type. A response can also hold thinking or fallback blocks.
+  const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+  return {
+    text,
+    servedBy: data.model || model.id,
+    truncated: data.stop_reason === 'max_tokens',
+    usage: data.usage
+  };
 }
 
-// Parse response into structured sections
-function parseOutput(raw) {
-  let detectedTells = '';
+async function callGemini({ apiKey, model, systemPrompt, userPrompt, signal }) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model.id)}:generateContent`;
+  const body = {
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    generationConfig: { temperature: 0.3 }
+  };
+  // Send the key in a header, not the URL, so it stays out of request logs.
+  const res = await postJson(url, { 'x-goog-api-key': apiKey }, body, signal);
+  if (!res.ok) throw upstreamError('Google Gemini', res.status, await res.text(), model.id);
+
+  const data = await res.json();
+  const candidate = data.candidates?.[0];
+  if (!candidate && data.promptFeedback?.blockReason) {
+    throw new AppError(422, 'refusal', `Gemini declined to rewrite this text (${data.promptFeedback.blockReason}).`);
+  }
+  const text = (candidate?.content?.parts || []).filter(p => p.text && !p.thought).map(p => p.text).join('');
+  return {
+    text,
+    servedBy: data.modelVersion || model.id,
+    truncated: candidate?.finishReason === 'MAX_TOKENS'
+  };
+}
+
+async function callProvider(providerId, args) {
+  switch (providerId) {
+    case 'anthropic':
+      return callAnthropic(args);
+    case 'gemini':
+      return callGemini(args);
+    case 'openai':
+      return callOpenAICompatible({ ...args, baseUrl: 'https://api.openai.com/v1', providerName: 'OpenAI' });
+    case 'groq':
+      return callOpenAICompatible({ ...args, baseUrl: 'https://api.groq.com/openai/v1', providerName: 'Groq' });
+    case 'openrouter':
+      return callOpenAICompatible({
+        ...args,
+        baseUrl: 'https://openrouter.ai/api/v1',
+        providerName: 'OpenRouter',
+        extraHeaders: { 'HTTP-Referer': 'https://github.com/blader/humanizer', 'X-Title': 'Humanizer Web' }
+      });
+    default:
+      throw new AppError(400, 'bad_request', `Unsupported provider: ${providerId}`);
+  }
+}
+
+const SYSTEM_PROMPT = `You are Humanizer, a prose editor. Rewrite the text the user sends by following the skill below.
+
+${skillPrompt}
+
+## Output format for this app
+
+Return exactly two sections, in this order:
+
+### Detected AI Tells
+- One bullet per pattern you found and fixed. Start each bullet with the pattern number and name, such as "§1 Not X but Y:", then say briefly what you changed.
+
+### Humanized Text
+The final rewrite only. Keep every fact, name, figure, link, and code sample. Add no commentary before or after it.`;
+
+function buildUserPrompt(text, voiceSample) {
+  let prompt = `Humanize this text:\n\n"""\n${text}\n"""`;
+  if (voiceSample) {
+    prompt += `\n\nMatch the tone, sentence rhythm, and word choice of this sample of the author's own writing:\n\n"""\n${voiceSample}\n"""`;
+  }
+  return prompt;
+}
+
+// Split the model's answer into the tells list and the rewrite.
+const TELLS_HEADING = /^#{1,4}[ \t]*\**[ \t]*(?:Detected AI Tells|Detected Tells|Tells|Changes)\b[^\n]*$/im;
+const TEXT_HEADING = /^#{1,4}[ \t]*\**[ \t]*(?:Humanized Text|Rewrite|Final Text)\b[^\n]*$/im;
+
+function parseOutput(rawInput) {
+  const raw = rawInput.replace(/\r\n/g, '\n').trim();
+  const tells = TELLS_HEADING.exec(raw);
+  const textHeading = TEXT_HEADING.exec(raw);
+
   let humanizedText = raw;
-
-  const tellsMatch = raw.match(/### (?:Detected AI Tells|Tells|Changes|Detected Tells)([\s\S]*?)(?=### (?:Humanized Text|Rewrite|Final Text)|$)/i);
-  const textMatch = raw.match(/### (?:Humanized Text|Rewrite|Final Text)([\s\S]*)$/i);
-
-  if (textMatch && textMatch[1].trim()) {
-    humanizedText = textMatch[1].trim();
+  let detectedTells = '';
+  if (textHeading) {
+    humanizedText = raw.slice(textHeading.index + textHeading[0].length).trim();
+    if (tells && tells.index < textHeading.index) {
+      detectedTells = raw.slice(tells.index + tells[0].length, textHeading.index).trim();
+    }
   }
-  if (tellsMatch && tellsMatch[1].trim()) {
-    detectedTells = tellsMatch[1].trim();
-  }
-
+  humanizedText = humanizedText.replace(/^"""\s*/, '').replace(/\s*"""$/, '').trim();
   return { detectedTells, humanizedText, raw };
 }
 
-// Built-in Demo Response for testing without API keys
+// Demo response for trying the app without an API key.
 function getMockHumanizedResponse(text) {
+  const humanizedText = text
+    .replace(/In today's fast-paced [\w\s]*?landscape, /gi, '')
+    .replace(/Let's (?:dive|delve) in(?:to)?/gi, 'Looking at')
+    .replace(/It is not merely an? .*?; it is /gi, 'It is ')
+    .replace(/It's not just a .*?; it's /gi, "It's ")
+    .replace(/\s*(?:Let that sink in|Read that again)\.?/gi, '')
+    .replace(/serves as a testament to/gi, 'shows')
+    .replace(/\s+—\s+/g, ', ')
+    .trim();
+  const detectedTells = [
+    '- §1 Not X but Y: Removed "not merely X; it is Y" contrasts.',
+    '- §2 One-line closers and dramatic fragments: Cut "Let that sink in" and "Read that again".',
+    '- §4 Staged run-up before the point: Removed openers such as "Let\'s dive in".',
+    '- §8 Dashes as the universal connector: Replaced spaced dashes with commas.',
+    '- §12 Overused AI words: Replaced "testament" and "landscape" phrasing.'
+  ].join('\n');
   return {
-    raw: `### Detected AI Tells
-- §1 Not X but Y: Removed synthetic contrast structures.
-- §2 One-line closer: Cut redundant trailing punchlines ("Let that sink in").
-- §4 Staged run-up: Removed throat-clearing openings ("Let's dive in", "Here's the thing").
-- §6 Forced triads: Deconstructed artificial three-part lists into natural statements.
-- §12 Overused AI words: Replaced "delve", "testament", "tapestry", "crucial", and "landscape" with plain language.
-
-### Humanized Text
-${text
-  .replace(/In today's fast-paced digital landscape, /gi, '')
-  .replace(/Let's dive in(?:to)?/gi, 'Looking at')
-  .replace(/It is not merely a .*?; it is /gi, 'It is ')
-  .replace(/Let that sink in\.?/gi, '')
-  .replace(/serves as a testament to/gi, 'shows')
-  .trim()}`,
-    detectedTells: `- §1 Not X but Y: Removed synthetic contrast structures.
-- §2 One-line closer: Cut redundant trailing punchlines.
-- §4 Staged run-up: Removed throat-clearing openings.
-- §6 Forced triads: Deconstructed artificial three-part lists.
-- §12 Overused AI words: Replaced "delve", "testament", "crucial", and "landscape" with plain language.`,
-    humanizedText: text
-      .replace(/In today's fast-paced digital landscape, /gi, '')
-      .replace(/Let's dive in(?:to)?/gi, 'Looking at')
-      .replace(/It is not merely a .*?; it is /gi, 'It is ')
-      .replace(/Let that sink in\.?/gi, '')
-      .replace(/serves as a testament to/gi, 'shows')
-      .trim()
+    detectedTells,
+    humanizedText,
+    raw: `### Detected AI Tells\n${detectedTells}\n\n### Humanized Text\n${humanizedText}`
   };
 }
 
-// Static file MIME types
+function sendJson(res, status, payload) {
+  if (res.writableEnded) return;
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(payload));
+}
+
+function readBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    let tooLarge = false;
+    const chunks = [];
+    req.on('data', chunk => {
+      if (tooLarge) return; // Drain the rest so the 413 reply can be sent.
+      size += chunk.length;
+      if (size > limit) {
+        tooLarge = true;
+        chunks.length = 0;
+        reject(new AppError(413, 'too_large', 'That text is too long. Split it into smaller parts.'));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+}
+
+function handleConfig(res) {
+  loadEnv();
+  const configuredKeys = {};
+  const keyEnvVars = {};
+  const providers = {};
+  for (const [id, conf] of Object.entries(PROVIDERS)) {
+    const { key, envVarName } = getServerKey(conf);
+    configuredKeys[id] = Boolean(key);
+    if (key) keyEnvVars[id] = envVarName;
+    providers[id] = {
+      name: conf.name,
+      keyPrefix: conf.keyPrefix,
+      envVar: conf.envKeys[0],
+      defaultModel: conf.defaultModel,
+      models: conf.models.map(({ id: modelId, label, hint }) => ({ id: modelId, label, hint: hint || '' }))
+    };
+  }
+
+  let defaultProvider = process.env.DEFAULT_PROVIDER || 'anthropic';
+  if (!providers[defaultProvider] || !configuredKeys[defaultProvider]) {
+    defaultProvider = Object.keys(configuredKeys).find(k => configuredKeys[k]) || 'anthropic';
+  }
+
+  // Never send key values or fragments to the browser. The page is public.
+  sendJson(res, 200, {
+    providers,
+    configuredKeys,
+    keyEnvVars,
+    defaultProvider,
+    patterns: PATTERNS,
+    maxInputChars: MAX_INPUT_CHARS
+  });
+}
+
+async function handleHumanize(req, res) {
+  let payload;
+  try {
+    payload = JSON.parse((await readBody(req, MAX_BODY_BYTES)) || '{}');
+  } catch (err) {
+    if (err instanceof AppError) return sendJson(res, err.status, { error: err.message, code: err.code });
+    return sendJson(res, 400, { error: 'The request was not valid JSON.', code: 'bad_request' });
+  }
+
+  const text = typeof payload.text === 'string' ? payload.text.trim() : '';
+  const voiceSample = typeof payload.voiceSample === 'string' ? payload.voiceSample.trim() : '';
+  const providerId = typeof payload.provider === 'string' ? payload.provider : 'anthropic';
+
+  if (!text) return sendJson(res, 400, { error: 'Paste some text to humanize.', code: 'empty' });
+  if (text.length + voiceSample.length > MAX_INPUT_CHARS) {
+    return sendJson(res, 413, { error: `Keep the text and voice sample under ${MAX_INPUT_CHARS.toLocaleString()} characters in total.`, code: 'too_large' });
+  }
+
+  if (payload.isMock) {
+    return sendJson(res, 200, {
+      success: true,
+      isMock: true,
+      modelLabel: 'Demo',
+      notice: 'Demo mode uses simple find-and-replace rules. Add an API key for a real rewrite.',
+      ...getMockHumanizedResponse(text)
+    });
+  }
+
+  const providerConfig = PROVIDERS[providerId];
+  if (!providerConfig) return sendJson(res, 400, { error: `Unsupported provider: ${providerId}`, code: 'bad_request' });
+
+  const clientKey = sanitizeApiKey(payload.apiKey);
+  const { key: serverKey, envVarName } = getServerKey(providerConfig);
+  const apiKey = clientKey || serverKey;
+  if (!apiKey) {
+    return sendJson(res, 400, {
+      error: `No API key is set for ${providerConfig.name}. Add one in Settings, or set ${providerConfig.envKeys[0]} on the server.`,
+      code: 'missing_key'
+    });
+  }
+
+  const { model, substituted } = resolveModel(providerConfig, payload.model);
+  let notice = '';
+  if (substituted) {
+    notice = `"${String(payload.model).slice(0, 80)}" is not available here, so ${model.label} was used instead.`;
+    console.warn(`[humanize] Unknown model "${String(payload.model).slice(0, 80)}" for ${providerId}; using ${model.id}`);
+  }
+
+  const keySource = clientKey ? 'browser' : `env:${envVarName}`;
+  console.log(`[humanize] provider=${providerId} model=${model.id} key=${keySource} (${apiKey.length} chars, starts ${apiKey.slice(0, 7)}) input=${text.length} chars`);
+
+  // Stop the upstream call if the browser cancels or the call runs too long.
+  const controller = new AbortController();
+  let timedOut = false;
+  let clientGone = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, UPSTREAM_TIMEOUT_MS);
+  res.on('close', () => {
+    if (res.writableEnded) return;
+    clientGone = true;
+    controller.abort();
+  });
+
+  const started = Date.now();
+  try {
+    const result = await callProvider(providerId, {
+      apiKey,
+      model,
+      systemPrompt: SYSTEM_PROMPT,
+      userPrompt: buildUserPrompt(text, voiceSample),
+      signal: controller.signal
+    });
+    const durationMs = Date.now() - started;
+    const usage = result.usage
+      ? ` input=${result.usage.input_tokens} cache_read=${result.usage.cache_read_input_tokens ?? 0} cache_write=${result.usage.cache_creation_input_tokens ?? 0} output=${result.usage.output_tokens}`
+      : '';
+    console.log(`[humanize] done provider=${providerId} served_by=${result.servedBy} ${durationMs}ms${result.truncated ? ' truncated' : ''}${usage}`);
+
+    if (!result.text.trim()) {
+      throw new AppError(502, 'empty_response', 'The model returned no text. Try again or choose another model.');
+    }
+    if (result.truncated) {
+      notice = [notice, 'The response hit the length limit, so the rewrite may be cut off.'].filter(Boolean).join(' ');
+    }
+
+    sendJson(res, 200, {
+      success: true,
+      provider: providerId,
+      providerName: providerConfig.name,
+      model: model.id,
+      modelLabel: model.label,
+      servedBy: result.servedBy,
+      durationMs,
+      notice,
+      ...parseOutput(result.text)
+    });
+  } catch (err) {
+    if (clientGone) {
+      console.log(`[humanize] cancelled by the browser after ${Date.now() - started}ms`);
+      return;
+    }
+    if (timedOut) {
+      return sendJson(res, 504, { error: `${providerConfig.name} took too long to answer. Try a shorter text or a faster model.`, code: 'timeout' });
+    }
+    if (err instanceof AppError) {
+      console.error(`[humanize] ${err.code}: ${err.message} ${err.detail}`);
+      return sendJson(res, err.status, { error: err.message, code: err.code, detail: err.detail });
+    }
+    console.error('[humanize] unexpected error:', err);
+    return sendJson(res, 500, { error: 'Something went wrong while calling the model.', code: 'server', detail: String(err.message || err) });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -263,183 +560,52 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon'
 };
 
-const server = http.createServer(async (req, res) => {
-  const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
-  const pathname = parsedUrl.pathname;
-
-  // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
-
-  // API: Get configuration status
-  if (pathname === '/api/config' && req.method === 'GET') {
-    loadEnv();
-    const configuredKeys = {};
-    const keyDetails = {};
-    for (const [key, conf] of Object.entries(PROVIDERS)) {
-      const { key: sKey, envVarName } = getServerKey(conf);
-      configuredKeys[key] = Boolean(sKey);
-      if (sKey) {
-        keyDetails[key] = {
-          envVar: envVarName,
-          prefix: sKey.slice(0, 9) + '...',
-          length: sKey.length
-        };
-      }
-    }
-    let defaultProvider = process.env.DEFAULT_PROVIDER || 'gemini';
-    if (!configuredKeys[defaultProvider]) {
-      const active = Object.keys(configuredKeys).find(k => configuredKeys[k]);
-      if (active) defaultProvider = active;
-    }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      providers: PROVIDERS,
-      configuredKeys,
-      keyDetails,
-      defaultProvider
-    }));
-    return;
-  }
-
-  // API: Humanize text
-  if (pathname === '/api/humanize' && req.method === 'POST') {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
-      try {
-        const payload = JSON.parse(body || '{}');
-        const { text, voiceSample, provider = 'openai', apiKey, model, isMock } = payload;
-
-        if (!text || !text.trim()) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Please provide text to humanize.' }));
-          return;
-        }
-
-        // Demo / Mock mode
-        if (isMock) {
-          const mockResult = getMockHumanizedResponse(text);
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: true, isMock: true, ...mockResult }));
-          return;
-        }
-
-        const providerConfig = PROVIDERS[provider];
-        if (!providerConfig) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: `Unsupported provider: ${provider}` }));
-          return;
-        }
-
-        const clientKey = sanitizeApiKey(apiKey);
-        const { key: serverKey, envVarName } = getServerKey(providerConfig);
-        const effectiveKey = clientKey || serverKey;
-
-        if (!effectiveKey) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            error: `Missing API key for ${providerConfig.name}. Please enter your API key in the UI settings or configure ${providerConfig.envKey} in Railway Variables / .env file.`
-          }));
-          return;
-        }
-
-        const keySource = clientKey ? 'browser input' : `environment variable (${envVarName})`;
-        console.log(`[API Call] Provider: ${providerConfig.name}, Model: ${model || providerConfig.defaultModel}, Key source: ${keySource}, Key length: ${effectiveKey.length}, Prefix: ${effectiveKey.slice(0, 9)}...`);
-
-        const targetModel = model || providerConfig.defaultModel;
-
-        const systemPrompt = `You are Humanizer, an expert prose editor.\n\nStrictly follow these instructions and 26 patterns from SKILL.md to rewrite AI text:\n\n${skillPrompt}`;
-        
-        let userPrompt = `Please humanize the following text according to Humanizer rules:\n\n"""\n${text.trim()}\n"""\n\n`;
-        if (voiceSample && voiceSample.trim()) {
-          userPrompt += `Match the tone, sentence cadence, and style of this author sample:\n"""\n${voiceSample.trim()}\n"""\n\n`;
-        }
-        userPrompt += `Formatting Instructions:
-Output your answer clearly separated into two sections:
-
-### Detected AI Tells
-- Enumerate any AI patterns/tells detected in the original (cite §pattern numbers where applicable, such as §1 Not X but Y, §2 One-line closers, §6 Forced triads, §8 Dashes, §12 AI Words) and note what was fixed.
-
-### Humanized Text
-[Provide ONLY the clean, final humanized text rewrite here, keeping all facts, names, figures, and code intact.]`;
-
-        let rawResponse = '';
-        if (provider === 'openai') {
-          rawResponse = await callOpenAICompatible('https://api.openai.com/v1', effectiveKey, targetModel, systemPrompt, userPrompt);
-        } else if (provider === 'groq') {
-          rawResponse = await callOpenAICompatible('https://api.groq.com/openai/v1', effectiveKey, targetModel, systemPrompt, userPrompt);
-        } else if (provider === 'openrouter') {
-          rawResponse = await callOpenAICompatible('https://openrouter.ai/api/v1', effectiveKey, targetModel, systemPrompt, userPrompt, {
-            'HTTP-Referer': 'https://github.com/blader/humanizer',
-            'X-Title': 'AI Humanizer Web'
-          });
-        } else if (provider === 'anthropic') {
-          rawResponse = await callAnthropic(effectiveKey, targetModel, systemPrompt, userPrompt);
-        } else if (provider === 'gemini') {
-          rawResponse = await callGemini(effectiveKey, targetModel, systemPrompt, userPrompt);
-        }
-
-        const parsed = parseOutput(rawResponse);
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          success: true,
-          provider,
-          model: targetModel,
-          ...parsed
-        }));
-      } catch (err) {
-        console.error('Humanize error:', err);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: err.message || 'Internal server error while calling LLM.' }));
-      }
-    });
-    return;
-  }
-
-  // Serve static files from /public
-  let filePath = path.join(__dirname, 'public', pathname === '/' ? 'index.html' : pathname);
-  
-  // Security check: stay within public/
-  const publicDir = path.join(__dirname, 'public');
-  if (!filePath.startsWith(publicDir)) {
+function serveStatic(pathname, res) {
+  let filePath = path.join(PUBLIC_DIR, pathname === '/' ? 'index.html' : pathname);
+  if (!filePath.startsWith(PUBLIC_DIR + path.sep)) {
     res.writeHead(403);
     res.end('Access denied');
     return;
   }
 
   fs.stat(filePath, (err, stats) => {
-    if (err || !stats.isFile()) {
-      // Fallback to index.html for SPA if not found
-      filePath = path.join(__dirname, 'public', 'index.html');
-    }
-    const ext = path.extname(filePath).toLowerCase();
-    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-
+    if (err || !stats.isFile()) filePath = path.join(PUBLIC_DIR, 'index.html');
     fs.readFile(filePath, (readErr, content) => {
       if (readErr) {
         res.writeHead(404);
         res.end('File not found');
         return;
       }
-      res.writeHead(200, { 'Content-Type': contentType });
+      res.writeHead(200, {
+        'Content-Type': MIME_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
+        // Revalidate on every load so browsers never run an old app.js
+        // that lists old model names.
+        'Cache-Control': 'no-cache'
+      });
       res.end(content);
     });
   });
+}
+
+const server = http.createServer(async (req, res) => {
+  const { pathname } = new URL(req.url, 'http://localhost');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'same-origin');
+
+  // The page and the API share one origin, so the API sends no CORS headers.
+  // Other websites cannot call it from a visitor's browser.
+  if (pathname === '/api/config' && req.method === 'GET') return handleConfig(res);
+  if (pathname === '/api/humanize' && req.method === 'POST') return handleHumanize(req, res);
+  if (pathname.startsWith('/api/')) return sendJson(res, 404, { error: 'Not found' });
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405);
+    res.end();
+    return;
+  }
+  serveStatic(pathname, res);
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n======================================================`);
-  console.log(` AI Humanizer Web Server running!`);
-  console.log(` Local URL:   http://localhost:${PORT}`);
-  console.log(` Railway:     Listening on 0.0.0.0:${PORT}`);
-  console.log(`======================================================\n`);
+  console.log(`\nHumanizer web app running at http://localhost:${PORT}`);
+  console.log(`Loaded ${PATTERNS.length} patterns from SKILL.md\n`);
 });
-

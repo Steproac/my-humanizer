@@ -2,240 +2,251 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Humanizer — Local Testing & Preview</title>
-  <link rel="stylesheet" href="style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="Rewrite AI-sounding text so it reads like a person wrote it, without changing what it says.">
+  <title>Humanizer</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236366f1'/%3E%3Cpath d='M9 22.5 20.5 11a2.1 2.1 0 0 1 3 3L12 25.5 8 26.5z' fill='none' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Header -->
-  <header class="navbar">
-    <div class="nav-container">
-      <div class="logo-group">
-        <div class="logo-icon">✍️</div>
-        <div>
-          <h1 class="logo-title">AI Humanizer</h1>
-          <p class="logo-sub">Rule-based AI pattern removal • 26 patterns</p>
-        </div>
-      </div>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        </span>
+        <span class="brand-text">
+          <span class="brand-name">Humanizer</span>
+          <span class="brand-sub" id="brandSub">Removes AI writing patterns</span>
+        </span>
+      </a>
 
-      <div class="nav-actions">
-        <!-- Sample Selector -->
-        <div class="dropdown-wrapper">
-          <button class="btn btn-secondary dropdown-btn" id="samplesBtn">
-            <span>📋 Load Sample</span>
-            <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
-          </button>
-          <div class="dropdown-menu" id="samplesMenu">
-            <button class="dropdown-item" data-sample="product">Product Launch (Dashes, Staged Opener, Not-X)</button>
-            <button class="dropdown-item" data-sample="technical">Technical Architecture (AI Words, Triads)</button>
-            <button class="dropdown-item" data-sample="essay">Leadership & Strategy (Deep Sayings, Closers)</button>
-          </div>
-        </div>
-
-        <!-- API Settings Button -->
-        <button class="btn btn-secondary" id="openSettingsBtn">
-          <span class="status-dot" id="navStatusDot"></span>
-          <span id="navKeyLabel">API Settings</span>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        </button>
-      </div>
+      <button class="model-chip" id="modelChip" type="button" aria-haspopup="dialog" title="Change model or API key">
+        <span class="status-dot" id="statusDot" aria-hidden="true"></span>
+        <span class="model-chip-text">
+          <span class="model-chip-provider" id="chipProvider">Loading…</span>
+          <span class="model-chip-model" id="chipModel"></span>
+        </span>
+        <svg class="model-chip-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1 14h6"/><path d="M9 8h6"/><path d="M17 16h6"/></svg>
+      </button>
     </div>
   </header>
 
-  <!-- Notice Banner -->
-  <div class="banner-container">
-    <div class="banner">
-      <span class="banner-badge">Railway Ready</span>
-      <span>Test your humanizer locally before deploying. Configure your API key in the settings above or inside <code>.env</code>.</span>
+  <div class="notice-bar" id="setupNotice" hidden>
+    <div class="notice-inner">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>
+      <p id="setupNoticeText">Add an API key to rewrite text with a real model.</p>
+      <div class="notice-actions">
+        <button class="btn btn-sm btn-primary" id="setupAddKeyBtn" type="button">Add API key</button>
+        <button class="btn btn-sm btn-ghost" id="setupDemoBtn" type="button">Try the demo</button>
+      </div>
     </div>
   </div>
 
-  <!-- Main Content -->
-  <main class="main-container">
-    <div class="editor-grid">
-      <!-- Input Panel -->
-      <section class="card panel">
-        <div class="panel-header">
-          <div class="panel-title-group">
-            <span class="panel-dot input-dot"></span>
-            <h2>AI-Generated Text</h2>
+  <main class="workspace">
+    <!-- Input -->
+    <section class="pane" aria-labelledby="inputHeading">
+      <div class="pane-head">
+        <h2 id="inputHeading">Original</h2>
+        <div class="pane-tools">
+          <div class="samples" role="group" aria-label="Load a sample">
+            <span class="samples-label">Try a sample:</span>
+            <button class="chip" type="button" data-sample="product">Product launch</button>
+            <button class="chip" type="button" data-sample="technical">Technical</button>
+            <button class="chip" type="button" data-sample="essay">Essay</button>
           </div>
-          <div class="panel-stats">
-            <span id="inputWordCount">0 words</span>
-            <span class="dot-separator">•</span>
-            <span id="inputCharCount">0 chars</span>
-            <button class="btn-ghost" id="clearInputBtn" title="Clear input">Clear</button>
-          </div>
-        </div>
-
-        <div class="textarea-wrapper">
-          <textarea
-            id="inputText"
-            placeholder="Paste AI-generated text here, or click 'Load Sample' above...&#10;&#10;Humanizer will strip out tells like 'not X but Y', 'let that sink in', forced triads, 'delve', and false profundity while keeping all original facts and data."
-          ></textarea>
-        </div>
-
-        <!-- Optional Voice Matching Sample Accordion -->
-        <details class="accordion" id="voiceAccordion">
-          <summary class="accordion-header">
-            <span>🎭 Match Specific Author Voice (Optional)</span>
-            <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
-          </summary>
-          <div class="accordion-content">
-            <p class="field-hint">Paste 1-2 paragraphs of your own writing. Humanizer will match your sentence rhythm, cadence, and vocabulary.</p>
-            <textarea id="voiceSample" rows="3" placeholder="Example of your own writing style..."></textarea>
-          </div>
-        </details>
-
-        <!-- Action Bar -->
-        <div class="action-bar">
-          <button class="btn btn-primary" id="humanizeBtn">
-            <span class="btn-spinner hidden" id="spinner"></span>
-            <span id="btnText">✨ Humanize Text</span>
-          </button>
-          <button class="btn btn-secondary" id="demoBtn" title="Run simulated test without needing an API key">
-            ⚡ Quick Demo Mode
+          <button class="icon-btn" id="clearInputBtn" type="button" title="Clear text" aria-label="Clear text">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
         </div>
-      </section>
+      </div>
 
-      <!-- Output Panel -->
-      <section class="card panel">
-        <div class="panel-header">
-          <div class="panel-title-group">
-            <span class="panel-dot output-dot"></span>
-            <h2>Humanized Output</h2>
+      <div class="pane-body">
+        <label for="inputText" class="sr-only">Text to humanize</label>
+        <textarea id="inputText" spellcheck="true" placeholder="Paste AI-written text here.&#10;&#10;Humanizer removes tells such as “not X but Y”, “let that sink in”, forced lists of three, and words like “delve”, while keeping every fact, name, and number."></textarea>
+      </div>
+
+      <details class="voice" id="voiceDetails">
+        <summary>
+          <span class="voice-title">Match my writing voice</span>
+          <span class="tag">Optional</span>
+          <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </summary>
+        <div class="voice-body">
+          <label for="voiceSample" class="hint">Paste a paragraph or two of your own writing. The rewrite will follow its rhythm and word choice.</label>
+          <textarea id="voiceSample" rows="4" placeholder="A sample of your own writing…"></textarea>
+        </div>
+      </details>
+
+      <div class="pane-foot">
+        <span class="counts" id="inputCounts" aria-live="polite">0 words</span>
+        <div class="run-group">
+          <button class="btn btn-ghost" id="demoBtn" type="button" title="Simple find-and-replace demo. No API key needed.">Demo</button>
+          <button class="btn btn-primary btn-run" id="humanizeBtn" type="button">
+            <span id="humanizeLabel">Humanize</span>
+            <kbd class="kbd" id="shortcutHint">Ctrl ↵</kbd>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Output -->
+    <section class="pane output-pane" id="outputPane" data-state="empty" aria-labelledby="outputHeading">
+      <div class="pane-head">
+        <h2 id="outputHeading">Humanized</h2>
+        <div class="tabs" role="tablist" aria-label="Output views">
+          <button class="tab" type="button" role="tab" id="tab-rewrite" data-tab="rewrite" aria-controls="panel-rewrite" aria-selected="true">Rewrite</button>
+          <button class="tab" type="button" role="tab" id="tab-changes" data-tab="changes" aria-controls="panel-changes" aria-selected="false" tabindex="-1">Changes</button>
+          <button class="tab" type="button" role="tab" id="tab-tells" data-tab="tells" aria-controls="panel-tells" aria-selected="false" tabindex="-1">Tells <span class="tab-count" id="tellsCount"></span></button>
+          <button class="tab" type="button" role="tab" id="tab-raw" data-tab="raw" aria-controls="panel-raw" aria-selected="false" tabindex="-1">Raw</button>
+        </div>
+      </div>
+
+      <div class="pane-body output-body" id="outputBody">
+        <!-- Empty -->
+        <div class="state state-empty">
+          <div class="empty-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>
           </div>
-          <div class="output-actions">
-            <div class="tabs">
-              <button class="tab-btn active" data-tab="final">Rewrite</button>
-              <button class="tab-btn" data-tab="tells">Detected Tells</button>
-              <button class="tab-btn" data-tab="raw">Full Output</button>
+          <p class="empty-title">Your rewrite will appear here</p>
+          <p class="empty-sub">Paste text on the left, then press <strong>Humanize</strong> <span class="nowrap">(<span id="emptyShortcut">Ctrl ↵</span>)</span>.</p>
+          <div class="pattern-preview" id="patternPreview"></div>
+        </div>
+
+        <!-- Loading -->
+        <div class="state state-loading" aria-live="polite">
+          <div class="loading-status">
+            <span class="spinner" aria-hidden="true"></span>
+            <span id="loadingText">Rewriting…</span>
+            <span class="elapsed" id="loadingElapsed">0.0s</span>
+            <button class="btn btn-sm btn-ghost" id="cancelBtn" type="button">Cancel</button>
+          </div>
+          <p class="loading-hint" id="loadingHint" hidden>Long texts and larger models can take up to a minute.</p>
+          <div class="skeleton" aria-hidden="true">
+            <span style="width: 92%"></span>
+            <span style="width: 86%"></span>
+            <span style="width: 95%"></span>
+            <span style="width: 60%"></span>
+            <span class="gap"></span>
+            <span style="width: 90%"></span>
+            <span style="width: 78%"></span>
+            <span style="width: 84%"></span>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <div class="state state-error" role="alert">
+          <div class="error-card">
+            <div class="error-icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
             </div>
-            <button class="btn btn-secondary btn-sm" id="copyBtn" title="Copy clean output">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-              <span id="copyLabel">Copy</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="output-body">
-          <!-- Final Rewrite Tab -->
-          <div class="tab-pane active" id="tab-final">
-            <div class="output-content" id="outputFinal">
-              <div class="placeholder-state">
-                <div class="placeholder-icon">📄</div>
-                <p>Your rewritten human prose will appear here.</p>
-                <p class="placeholder-sub">Click <strong>Humanize Text</strong> or <strong>Quick Demo Mode</strong> to start.</p>
+            <div class="error-content">
+              <p class="error-title" id="errorTitle">Something went wrong</p>
+              <p class="error-message" id="errorMessage"></p>
+              <details class="error-details" id="errorDetailsWrap" hidden>
+                <summary>Details from the provider</summary>
+                <pre id="errorDetails"></pre>
+              </details>
+              <div class="error-actions">
+                <button class="btn btn-sm btn-primary" id="errorRetryBtn" type="button">Try again</button>
+                <button class="btn btn-sm btn-secondary" id="errorSettingsBtn" type="button" hidden>Open settings</button>
               </div>
             </div>
           </div>
+        </div>
 
-          <!-- Tells Tab -->
-          <div class="tab-pane" id="tab-tells">
-            <div class="output-content" id="outputTells">
-              <div class="placeholder-state">
-                <div class="placeholder-icon">🔍</div>
-                <p>Analysis of removed AI tells and patterns (§1–§26) will show here.</p>
-              </div>
+        <!-- Result -->
+        <div class="state state-result">
+          <p class="result-notice" id="resultNotice" hidden></p>
+          <div class="tabpanel" role="tabpanel" id="panel-rewrite" aria-labelledby="tab-rewrite" tabindex="0">
+            <div class="prose" id="outputRewrite"></div>
+          </div>
+          <div class="tabpanel" role="tabpanel" id="panel-changes" aria-labelledby="tab-changes" tabindex="0" hidden>
+            <div class="diff-legend">
+              <span><del>Removed</del></span>
+              <span><ins>Added</ins></span>
+              <span class="diff-summary" id="diffSummary"></span>
             </div>
+            <div class="prose diff" id="outputDiff"></div>
           </div>
-
-          <!-- Raw Tab -->
-          <div class="tab-pane" id="tab-raw">
-            <pre class="raw-output" id="outputRaw">No output yet.</pre>
+          <div class="tabpanel" role="tabpanel" id="panel-tells" aria-labelledby="tab-tells" tabindex="0" hidden>
+            <div id="outputTells"></div>
           </div>
-        </div>
-
-        <!-- Output Footer Stats -->
-        <div class="panel-footer" id="outputFooter" style="display: none;">
-          <div class="stats-comparison">
-            <span id="outWordCount">0 words</span>
-            <span class="stat-badge" id="wordDiffBadge">0% change</span>
-            <span class="dot-separator">•</span>
-            <span id="modelUsedBadge">gpt-4o</span>
+          <div class="tabpanel" role="tabpanel" id="panel-raw" aria-labelledby="tab-raw" tabindex="0" hidden>
+            <pre class="raw" id="outputRaw"></pre>
           </div>
         </div>
-      </section>
-    </div>
+      </div>
+
+      <div class="pane-foot result-foot">
+        <div class="result-stats" id="resultStats"></div>
+        <div class="result-actions">
+          <button class="btn btn-sm btn-ghost" id="reuseBtn" type="button" title="Move the rewrite into the input to run it again">Edit again</button>
+          <button class="btn btn-sm btn-secondary" id="copyBtn" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+            <span id="copyLabel">Copy</span>
+          </button>
+        </div>
+      </div>
+    </section>
   </main>
 
-  <!-- Settings Modal -->
-  <div class="modal-backdrop hidden" id="settingsModal">
-    <div class="modal card">
-      <div class="modal-header">
-        <div class="modal-title-group">
-          <h3>API Key & Provider Settings</h3>
-          <p class="field-hint">Choose where your API key is stored and which model to use.</p>
+  <!-- Settings -->
+  <dialog class="dialog" id="settingsDialog" aria-labelledby="settingsTitle">
+    <form id="settingsForm" novalidate>
+      <div class="dialog-head">
+        <div>
+          <h3 id="settingsTitle">Model and API key</h3>
+          <p class="hint">Choose who rewrites your text. A key you paste here stays in this browser.</p>
         </div>
-        <button class="modal-close-btn" id="closeSettingsBtn">&times;</button>
+        <button class="icon-btn" id="closeSettingsBtn" type="button" aria-label="Close settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
       </div>
 
-      <div class="modal-body">
-        <!-- Storage info box -->
-        <div class="info-callout">
-          <strong>Key Locations:</strong>
-          <ul>
-            <li><strong>Local testing:</strong> Enter your key below (saved locally in your browser), or add it to <code>.env</code> in this project.</li>
-            <li><strong>Railway deployment:</strong> Add your key under <strong>Variables</strong> in your Railway service dashboard.</li>
-          </ul>
+      <div class="dialog-body">
+        <p class="dialog-alert" id="settingsAlert" role="alert" hidden></p>
+
+        <div class="field">
+          <label for="providerSelect">Provider</label>
+          <select id="providerSelect"></select>
         </div>
 
-        <!-- Provider Selection -->
-        <div class="form-group">
-          <label for="providerSelect">AI Provider</label>
-          <select id="providerSelect" class="input-select">
-            <option value="openai">OpenAI (GPT-4o, GPT-4o-mini, o3-mini)</option>
-            <option value="anthropic">Anthropic Claude (Sonnet 5.5, Opus 5.5, Haiku 5.5)</option>
-            <option value="gemini">Google Gemini (Gemini 3.8 Flash, 2.5 Pro)</option>
-            <option value="groq">Groq (Llama 3.3 70B — Fast & Generous Free Tier)</option>
-            <option value="openrouter">OpenRouter (Multi-model gateway)</option>
-          </select>
-        </div>
-
-        <!-- Model Selection -->
-        <div class="form-group">
+        <div class="field">
           <label for="modelSelect">Model</label>
-          <select id="modelSelect" class="input-select"></select>
+          <select id="modelSelect"></select>
+          <p class="hint" id="modelHint"></p>
         </div>
 
-        <!-- API Key Input -->
-        <div class="form-group">
-          <div class="label-row">
-            <label for="apiKeyInput" id="apiKeyLabel">OpenAI API Key</label>
-            <span class="env-status-badge" id="envStatusBadge">Checking .env...</span>
+        <div class="field">
+          <label for="apiKeyInput" id="apiKeyLabel">API key</label>
+          <div class="input-with-btn">
+            <input type="password" id="apiKeyInput" autocomplete="off" spellcheck="false" autocapitalize="off">
+            <button class="icon-btn" id="toggleKeyBtn" type="button" aria-label="Show key" aria-pressed="false">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
           </div>
-          <div class="password-wrapper">
-            <input type="password" id="apiKeyInput" class="input-text" placeholder="Leave blank to use Railway variable..." autocomplete="off">
-            <button class="toggle-password-btn" id="toggleKeyVisibility" type="button" title="Show/Hide">👁️</button>
-          </div>
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
-            <p class="field-hint" id="apiKeyHint">Leave blank to use the key saved on Railway.</p>
-            <button type="button" class="btn-ghost" id="clearStoredKeyBtn" style="font-size: 0.75rem; color: #818cf8; text-decoration: underline;">Clear Browser Key</button>
-          </div>
+          <p class="key-status" id="keyStatus"></p>
+          <p class="hint hint-warn" id="keyFormatWarning" hidden></p>
+          <button class="link-btn" id="forgetKeyBtn" type="button" hidden>Forget the key saved in this browser</button>
         </div>
 
-        <!-- Direct .env file link reference -->
-        <div class="file-path-box">
-          <span class="file-label">Local .env file path:</span>
-          <code>/Users/stephenroach/Documents/AI Humanizer/.env</code>
-        </div>
+        <p class="hint" id="localHint" hidden>Running locally: keys in this project's <code>.env</code> file count as server keys.</p>
       </div>
 
-      <div class="modal-footer">
-        <button class="btn btn-secondary" id="cancelSettingsBtn">Close</button>
-        <button class="btn btn-primary" id="saveSettingsBtn">Save & Apply</button>
+      <div class="dialog-foot">
+        <button class="btn btn-ghost" id="cancelSettingsBtn" type="button">Cancel</button>
+        <button class="btn btn-primary" id="saveSettingsBtn" type="submit">Save</button>
       </div>
-    </div>
-  </div>
+    </form>
+  </dialog>
 
-  <!-- Notification Toast -->
-  <div class="toast hidden" id="toast"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script src="app.js"></script>
+  <script src="app.js" defer></script>
 </body>
 </html>
-
